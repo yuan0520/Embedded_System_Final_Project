@@ -8,41 +8,11 @@ Ticker servo_ticker;
 Timer t;
 PwmOut pin5(D5), pin6(D6);
 DigitalInOut ping(D11);
-BufferedSerial xbee(D1, D0);
+BufferedSerial xbee(D10, D9);
 BufferedSerial uart(D1, D0); //tx,rx
 // BufferedSerial pc(USBTX, USBRX);
 
 BBCar car(pin5, pin6, servo_ticker);
-
-void openmv_detect(int state){
-    float val;
-    
-    ping.output();
-    ping = 0; wait_us(200);
-    ping = 1; wait_us(5);
-    ping = 0; wait_us(5);
-
-    ping.input();
-    while(ping.read() == 0);
-    t.start();
-    while(ping.read() == 1);
-    val = t.read();
-    if(!state){
-        char buf1[100];
-        sprintf(buf1, "Distance before carlibration = %lf\r\n", val*17700.4f);
-        xbee.write(buf1, sizeof(buf1));
-    }
-    else{
-        char buf1[100];
-        sprintf(buf1, "Distance after carlibration = %lf\r\n", val*17700.4f);
-        xbee.write(buf1, sizeof(buf1));
-    }
-    t.stop();
-    t.reset();
-
-    ThisThread::sleep_for(1s);
-    
-}
 
 int main() {
 
@@ -54,37 +24,69 @@ int main() {
     car.setCalibTable(11, pwm_table0, speed_table0, 11, pwm_table1, speed_table1);
 
     uart.set_baud(9600);
-    xbee.set_baud(9600);
+    // xbee.set_baud(9600);
     // pc.set_baud(9600);
 
-    openmv_detect(0);
+    char buf[256], outbuf[256];
+    FILE *devin = fdopen(&xbee, "r");
+    FILE *devout = fdopen(&xbee, "w");
+    while(1) {
+        memset(buf, 0, 256);
+        for (int i = 0; ; i++) {
+            char recv = fgetc(devin);
+            if (recv == '\n') {
+                // printf("OK\r\n");
+                break;
+            }
+            buf[i] = fputc(recv, devout);
+        }
+        RPC::call(buf, outbuf);
+        break;
+    }
+
+    ThisThread::sleep_for(2s);
+
+    char buf2[256], outbuf2[256];
+    FILE *devin2 = fdopen(&uart, "r");
+    FILE *devout2 = fdopen(&uart, "w");
+    while(1) {
+        memset(buf2, 0, 256);
+        for (int i = 0; ; i++) {
+            char recv2 = fgetc(devin2);
+            if (recv2 == '\n') {
+                // printf("OK\r\n");
+                break;
+            }
+            buf2[i] = fputc(recv2, devout2);
+        }
+        RPC::call(buf2, outbuf2);
+        break;
+    }
+
+    ThisThread::sleep_for(1s);
 
     while(1) {
 
         if(uart.readable()){
-            char recv[1];
-            uart.read(recv, sizeof(recv));
-            if(recv[0] == 'l'){
-                // printf("left\n");
-                car.turn_my_carlib(5, -1);
+            char recv3[1];
+            uart.read(recv3, sizeof(recv3));
+            if(recv3[0] == 'l'){
+                car.turn_my_carlib(6, -1);
             }
-            else if(recv[0] == 'r'){
-                // printf("right\n");
-                car.turn_my_carlib(5, 1);
+            else if(recv3[0] == 'r'){
+                car.turn_my_carlib(6, 1);
             }
             else{
-                char buf[100];
-                sprintf(buf, "center\n");
-                xbee.write(buf, sizeof(buf));
-                car.goStraightCalib(5);
-                ThisThread::sleep_for(500ms);
+                car.goStraightCalib(6);
+                ThisThread::sleep_for(3000ms);
                 car.stop();
-                openmv_detect(1);
+                xbee.write("OK\n", 4);
                 break;
             }
             ThisThread::sleep_for(1000ms);
         }
 
     }
+
 
 }
